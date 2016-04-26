@@ -4,6 +4,7 @@
 
 #include "gpio.h"
 #include "state.h"
+#include "timer.h"
 
 // Global variables
 // Raw ADC10 value from the most recent conversion
@@ -50,6 +51,69 @@ static inline void event_clear(enum event e) {
   __enable_interrupt();
 }
 
+#define DEBOUNCE_DELAY 1000
+#define LONG_PRESS_DELAY 32000
+
+int button_handler(void) {
+  switch (raw_current_state()) {
+    case kWaitingForShortPress:
+      break;
+    case kDebouncingShortPress:
+      if (is_button_pressed()) {
+        set_state(kWaitingForLongPress);
+        timer_set_mode(kChannel1, kOneShot);
+        timer_start(kChannel1, LONG_PRESS_DELAY);
+      } else {
+        set_state(kWaitingForShortPress);
+      }
+      break;
+    case kWaitingForLongPress:
+      if (is_button_pressed()) {
+        set_state(kTiming);
+      } else {
+        set_state(kWaitingForShortPress);
+        toggle_led();
+      }
+      break;
+    case kTiming:
+      break;
+  }
+  return 1;
+}
+
+#pragma vector=PORT1_VECTOR
+__interrupt void port1_isr(void) {
+  // Clear interrupt flag.
+  P1IFG &= ~(1 << 3);
+
+  switch (raw_current_state()) {
+    case kWaitingForShortPress:
+      toggle_led();
+      set_state(kDebouncingShortPress);
+      timer_set_mode(kChannel1, kOneShot);
+      timer_start(kChannel1, DEBOUNCE_DELAY);
+      break;
+    case kDebouncingShortPress:
+      break;
+    case kWaitingForLongPress:
+      break;
+    case kTiming:
+      break;
+  }
+}
+
+int tick_handler(void) {
+  gTimerTicks++;
+
+  // Start another conversion
+  ADC10CTL0 |= ADC10SC;
+
+  // Clear the timer interrupt flag
+  TACCTL0 &= ~CCIFG;
+  gEvents |= kTATick;
+  return 1;
+}
+
 int main(void) {
   // The temperature reading from the external temperature sensor (after
   // conversion from ADC counts)
@@ -59,9 +123,6 @@ int main(void) {
   // Stop watchdog timer to prevent time out reset
   WDTCTL = WDTPW + WDTHOLD;  
   
-  // Disable interrupts for the setup
-  //__disable_interrupt();
-
   // Enable the crystal osc fault. The xtal startup process
   IE1 |= OFIE;     // An immedate Osc Fault will occur next
 
@@ -71,12 +132,10 @@ int main(void) {
   BCSCTL3 |= XCAP_1;
   
   gpio_setup();
+  timer_setup();
+  timer_set_handler(kChannel0, &tick_handler);
+  timer_set_handler(kChannel1, &button_handler);
 
-  // Set up the timer A - Use the system master crystal and have it count up
-  // With this crystal TACCR will be 32768
-  TACTL = TACLR | TASSEL0; // Clear timer A, Select clock source 0 (LFXTAL)
-  TACCR0 = 32768;          // One Second PLZ! 
-  
   // Setting up the ADC, will make some changes later
   ADC10CTL0 = REFON | REFBURST | ADC10SR | ADC10SHT0 | ADC10SHT1 | SREF0 ;
   ADC10CTL1 = 0x0000; // THIS SETS INCHx TO A0
@@ -86,15 +145,6 @@ int main(void) {
   
   //Enable interrupts now that setup is done
   __enable_interrupt();
-  
-  // Enable the compare ISR on TimerA CCR0
-  TACCTL0 |= CCIE;
-
-  // Enable the compare ISR on TimerA CCR1
-  TACCTL1 |= CCIE;
-  
-  //Starting the timer in up mode
-  TACTL |= MC0;   // going into up mode starts the (one second) timer!
   
   // ADC STUFF---------------------------
   // Turn on the ADC and ref voltage
@@ -136,59 +186,6 @@ __interrupt void ADC10_ISR(void) {
 
   // Wake the processor when this ISR exits
   __bic_SR_register_on_exit(LPM0_bits);
-}
-
-#pragma vector=TIMERA0_VECTOR
-__interrupt void TIMERA0_ISR(void) {
-  gTimerTicks++;
-
-  // Start another conversion
-  ADC10CTL0 |= ADC10SC;
-
-  // Clear the timer interrupt flag
-  TACCTL0 &= ~CCIFG;
-  gEvents |= kTATick;
-
-  // Wake the processor when this ISR exits
-  __bic_SR_register_on_exit(LPM0_bits);
-}
-
-#pragma vector=TIMERA1_VECTOR
-__interrupt void TIMERA1_ISR(void) {
-  toggle_led();
-  switch (raw_current_state()) {
-    case kWaitingForShortPress:
-      break;
-    case kDebouncingShortPress:
-      break;
-    case kWaitingForLongPress:
-      break;
-    case kDebouncingLongPress:
-      break;
-    case kTiming:
-      break;
-  }
-}
-
-#pragma vector=PORT1_VECTOR
-__interrupt void port1_isr(void) {
-  // Clear interrupt flag.
-  P1IFG &= ~(1 << 3);
-
-  switch (raw_current_state()) {
-    case kWaitingForShortPress:
-      set_state(kDebouncingShortPress);
-      break;
-    case kDebouncingShortPress:
-      break;
-    case kWaitingForLongPress:
-      set_state(kDebouncingLongPress);
-      break;
-    case kDebouncingLongPress:
-      break;
-    case kTiming:
-      break;
-  }
 }
 
 // The LF XTAL error flag is going to get set when the crystal starts up. Catch

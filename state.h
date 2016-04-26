@@ -5,10 +5,10 @@ enum state {
   kWaitingForShortPress = 0,
   kDebouncingShortPress,
   kWaitingForLongPress,
-  kDebouncingLongPress,
   kTiming,
 };
 
+enum state raw_current_state(void);
 enum state current_state(void);
 void set_state(enum state s);
 

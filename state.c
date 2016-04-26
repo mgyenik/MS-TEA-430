@@ -2,7 +2,7 @@
 
 #include "state.h"
 
-enum state gState = kWaitingForShortPress;
+static enum state gState = kWaitingForShortPress;
 
 enum state raw_current_state(void) {
   return gState;

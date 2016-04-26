@@ -20,3 +20,7 @@ void gpio_setup(void) {
 void toggle_led(void) {
   P1OUT ^= (1 << 6);
 }
+
+int is_button_pressed(void) {
+  return (P1IN & (1 << 3)) != 0;
+}

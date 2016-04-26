@@ -1,6 +1,6 @@
 TARGET = main
 MCU = msp430g2231
-SOURCES = main.c state.c gpio.c
+SOURCES = main.c state.c gpio.c timer.c
 CFLAGS = -mmcu=$(MCU) -g -Os -Wall -Wunused $(INCLUDES)
 ASFLAGS = -mmcu=$(MCU) -x assembler-with-cpp -Wa,-gstabs
 LDFLAGS = -mmcu=$(MCU)

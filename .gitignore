@@ -53,3 +53,5 @@ settings
 *.o
 *.hex
 *.elf
+*.swp
+*.swo
